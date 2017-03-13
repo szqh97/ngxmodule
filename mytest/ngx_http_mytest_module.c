@@ -1,6 +1,42 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
 
+typedef struct {
+    ngx_str_t       test_str;
+    ngx_ing_t       test_num;
+    ngx_flag_t      test_flag;
+    size_t          test_size;
+    ngx_array_t*    test_str_array;
+    ngx_array_t*    test_keyval;
+    off_t           test_off;
+    ngx_msec_t      test_msec;
+    time_t          test_sec;
+    ngx_bufs_t      test_bufs;
+    ngx_uint_t      test_enum_seq;
+    ngx_uint_t      test_bitmask;
+    ngx_uint_t      test_access;
+    ngx_path_t*     test_path;
+} ngx_http_mytest_conf_t;
+
+
+static void* ngx_http_mytest_create_loc_conf(ngx_conf_t *cf) 
+{
+    ngx_http_mytest_conf_t *mycf;
+    
+    mycf = (ngx_http_mytest_conf_t *) ngx_pcalloc(cf->pool, sizeof(ngx_http_mytest_conf_t));
+    if (NULL == mycf) {
+        return NULL;
+    }
+
+    mycf->test_flag = NGX_CONF_UNSET;
+    mycf->test_num = NGX_CONF_UNSET;
+    mycf->test_str_array = NGX_CONF_UNSET_PTR;
+    mycf->test_keyval = NULL;
+    mycf->test_off = NGX_CONF_UNSET;
+    mycf->test_msec = NGX_CONF_UNSET_MSEC;
+    mycf->test_size = NGX_CONF_UNSET_SIZE;
+    return mycf;
+}
 static ngx_command_t ngx_http_mytest_commands[] = {
     {
         ngx_string("mytest"),
