@@ -1,7 +1,8 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
+#include <ngx_http.h>
 
-staic ngx_conf_enum_t test_enums[] = {
+static ngx_conf_enum_t test_enums[] = {
     {ngx_string("apple"), 1},
     {ngx_string("banana"), 2},
     {ngx_string("orange"), 3},
@@ -17,7 +18,7 @@ static ngx_conf_bitmask_t test_bitmasks[] = {
 
 typedef struct {
     ngx_str_t       test_str;
-    ngx_ing_t       test_num;
+    ngx_int_t       test_num;
     ngx_flag_t      test_flag;
     size_t          test_size;
     ngx_array_t*    test_str_array;
@@ -31,6 +32,14 @@ typedef struct {
     ngx_uint_t      test_access;
     ngx_path_t*     test_path;
 } ngx_http_mytest_conf_t;
+
+typedef struct {
+    ngx_str_t my_config_str;
+    ngx_int_t my_config_num;
+} ngx_http_mytest_config2_t;
+
+static char* ngx_conf_set_myconfig(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+static char* ngx_http_mytest_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
 
 
 static void* ngx_http_mytest_create_loc_conf(ngx_conf_t *cf) 
@@ -54,7 +63,7 @@ static void* ngx_http_mytest_create_loc_conf(ngx_conf_t *cf)
 static ngx_command_t ngx_http_mytest_commands[] = {
     {
         ngx_string("mytest"),
-        NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|HGX_HTTP_LOC_CONF|NGX_HTTP_LMT_CONF|NGX_CONF_NOARGS,
+        NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LMT_CONF|NGX_CONF_NOARGS,
         ngx_http_mytest,
         NGX_HTTP_LOC_CONF_OFFSET,
         0,
@@ -62,10 +71,10 @@ static ngx_command_t ngx_http_mytest_commands[] = {
     },
     {
         ngx_string("test_str"),
-        NGX_HTTP_MAIN_CONF|NGX_HTTP_SERV_CONF|HGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+        NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
         ngx_conf_set_str_slot,
         NGX_HTTP_LOC_CONF_OFFSET,
-        offsetof(ngx_http_mytest_conf_t, test_str);
+        offsetof(ngx_http_mytest_conf_t, test_str),
         NULL
     },
     {
@@ -77,7 +86,7 @@ static ngx_command_t ngx_http_mytest_commands[] = {
     },
     {
         ngx_string("test_keyval"),
-        NGX_HTTP_LOCK_CONF | NGX_HTTP_CONF_TAKE2,
+        NGX_HTTP_LOC_CONF | NGX_CONF_TAKE2,
         ngx_conf_set_keyval_slot,
         NGX_HTTP_LOC_CONF_OFFSET,
         offsetof(ngx_http_mytest_conf_t, test_keyval),
@@ -133,12 +142,12 @@ static ngx_command_t ngx_http_mytest_commands[] = {
         NGX_HTTP_LOC_CONF | NGX_CONF_TAKE2,
         ngx_conf_set_bufs_slot , 
         NGX_HTTP_LOC_CONF_OFFSET,
-        offsetof(ngx_http_mytest_conf_t, my_bufs),
+        offsetof(ngx_http_mytest_conf_t, test_bufs),
         NULL
     },
     {
         ngx_string("test_enum"),
-        NOT_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+        NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
         ngx_conf_set_enum_slot, 
         NGX_HTTP_LOC_CONF_OFFSET,
         offsetof(ngx_http_mytest_conf_t, test_enum_seq),
@@ -172,10 +181,19 @@ static ngx_command_t ngx_http_mytest_commands[] = {
         offsetof(ngx_http_mytest_conf_t, test_path),
         NULL
     },
+
+    {
+        ngx_string("test_myconfig"),
+        NGX_HTTP_LOC_CONF | NGX_CONF_TAKE12,
+        ngx_conf_set_myconfig,
+        NGX_HTTP_LOC_CONF_OFFSET,
+        0,
+        NULL
+    },
     ngx_null_command
 };
 
-static ngx_int_t ngx_http_mytest_handler(ngx_http_reqest_t *r)
+static ngx_int_t ngx_http_mytest_handler(ngx_http_request_t *r)
 {
     if (!(r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD))) {
         return NGX_HTTP_NOT_ALLOWED;
@@ -187,13 +205,13 @@ static ngx_int_t ngx_http_mytest_handler(ngx_http_reqest_t *r)
     }
 
     ngx_str_t type = ngx_string("text/plain");
-    ngx_str_t response = ngx_string("hello world");
+    ngx_str_t response = ngx_string("team working [ss](http://example.com)");
     r->headers_out.status = NGX_HTTP_OK;
     r->headers_out.content_length_n = response.len;
     r->headers_out.content_type = type;
 
     rc =  ngx_http_send_header(r);
-    if (rc == NGX_ERROR || rc > NGX_OK || rc->header_only ) {
+    if (rc == NGX_ERROR || rc > NGX_OK || r->header_only ) {
         return rc;
     }
 
@@ -214,14 +232,7 @@ static ngx_int_t ngx_http_mytest_handler(ngx_http_reqest_t *r)
 
 }
 
-static char*
-ngx_http_mytest(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
-{
-    ngx_http_core_loc_conf_t *clcf;
-    clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
-    clcf->handler = ngx_http_mytest_handler;
-    reutrn NGX_CONF_OK;
-}
+
 
 static ngx_http_module_t ngx_http_mytest_module_ctx = {
     NULL,           /* preconfiguartion */
@@ -249,6 +260,35 @@ ngx_module_t ngx_http_mytest_module = {
     NULL,                           /* exit thread */
     NULL,                           /* exit process */
     NGX_MODULE_V1_PADDING           /* exit master */
+};
+
+
+
+static char* ngx_conf_set_myconfig(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+    ngx_http_mytest_config2_t *myconf = conf;
+    ngx_str_t* value = cf->args->elts;
+
+    if (cf->args->nelts > 1)  {
+        myconf->my_config_str = value[1];
+    }
+
+    if (cf->args->nelts > 2) {
+        myconf->my_config_num = ngx_atoi(value[2].data, value[2].len);
+        if (myconf->my_config_num == NGX_ERROR) {
+            return "invalid number";
+        }
+    }
+
+    return NGX_CONF_OK;
 }
 
+static char*
+ngx_http_mytest_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
+{
+    ngx_http_mytest_conf_t *prev = (ngx_http_mytest_conf_t*) parent;
+    ngx_http_mytest_conf_t *conf = (ngx_http_mytest_conf_t*) child;
+    ngx_conf_merge_str_value(conf->test_str, prev->test_str, "defaultstr");
+    return NGX_CONF_OK;
+}
 
