@@ -31,6 +31,7 @@ typedef struct {
     ngx_uint_t      test_bitmask;
     ngx_uint_t      test_access;
     ngx_path_t*     test_path;
+    ngx_http_upstream_conf_t    upstream;
 } ngx_http_mytest_conf_t;
 
 typedef struct {
@@ -40,6 +41,10 @@ typedef struct {
 
 static char* ngx_conf_set_myconfig(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static char* ngx_http_mytest(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+
+void mytest_upstream_finalize_request(ngx_http_request_t *r, ngx_int_t rc);
+ngx_int_t mytest_upstream_create_request(ngx_http_request_t *r);
+ngx_int_t mytest_upstream_process_header(ngx_http_request_t *r);
 
 
 static void* ngx_http_mytest_create_loc_conf(ngx_conf_t *cf) 
@@ -67,6 +72,14 @@ static ngx_command_t ngx_http_mytest_commands[] = {
         ngx_http_mytest,
         NGX_HTTP_LOC_CONF_OFFSET,
         0,
+        NULL
+    },
+    {
+        ngx_string("upstream_conn_timeout"),
+        NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+        ngx_conf_set_msec_slot,
+        NGX_HTTP_LOC_CONF_OFFSET,
+        offsetof(ngx_http_mytest_conf_t, upstream.connect_timeout),
         NULL
     },
     {
@@ -198,6 +211,11 @@ static ngx_int_t ngx_http_mytest_handler(ngx_http_request_t *r)
     if (!(r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD))) {
         return NGX_HTTP_NOT_ALLOWED;
     }
+    /* FIXME:  fix complng
+
+    ngx_http_mytest_conf_t *mycf = (ngx_http_mytest_conf_t*)ngx_http_conf_get_module_loc_conf(r, ngx_http_mytest_module);
+    r->upstream->conf = &mycf->upstream;
+    */
 
     ngx_int_t rc = ngx_http_discard_request_body(r);
     if (rc != NGX_OK) {
@@ -229,7 +247,7 @@ static ngx_int_t ngx_http_mytest_handler(ngx_http_request_t *r)
     out.buf = b;
     out.next = NULL;
 
-
+    return ngx_http_output_filter(r, &out);
 }
 
 
