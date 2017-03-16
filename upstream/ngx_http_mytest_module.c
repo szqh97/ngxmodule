@@ -87,6 +87,7 @@ static void* ngx_http_mytest_create_loc_conf(ngx_conf_t* cf)
 
 static char* ngx_http_mytest_merge_loc_conf(ngx_conf_t* cf, void* parent, void* child)
 {
+
     /*
     ngx_http_mytest_conf_t* prev = (ngx_http_mytest_conf_t*) parent;
     ngx_http_mytest_conf_t* conf = (ngx_http_mytest_conf_t*) child;
@@ -106,7 +107,7 @@ static char* ngx_http_mytest_merge_loc_conf(ngx_conf_t* cf, void* parent, void* 
 
 static ngx_int_t mytest_upstream_create_request(ngx_http_request_t *r)
 {
-    static ngx_str_t backendQueryLine = ngx_string("GET /search?q=%V HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n");
+    static ngx_str_t backendQueryLine = ngx_string("GET /search?q=%V HTTP/1.1\r\nHost: www.bing.com\r\nConnection: close\r\n\r\n");
     ngx_int_t queryLineLen = backendQueryLine.len + r->args.len - 2; 
 
     ngx_buf_t* b = ngx_create_temp_buf(r->pool, queryLineLen);
@@ -148,7 +149,7 @@ mytest_process_status_line(ngx_http_request_t* r)
     }
 
     if (rc == NGX_ERROR) {
-        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "upstream sent no valid HTTP/1.0 header");
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "uuuupstream sent no valid HTTP/1.0 header");
         r->http_version = NGX_HTTP_VERSION_9;
         u->state->status = NGX_HTTP_OK;
         return NGX_OK;
@@ -276,6 +277,7 @@ mytest_upstream_finalize_request(ngx_http_request_t *r, ngx_int_t rc) {
 static ngx_int_t 
 ngx_http_mytest_handler(ngx_http_request_t *r)
 {
+    ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "ngx_http_mytest_handler");
     ngx_http_mytest_ctx_t *myctx = ngx_http_get_module_ctx(r, ngx_http_mytest_module);
     if (myctx == NULL) {
         myctx = ngx_palloc(r->pool, sizeof(ngx_http_mytest_ctx_t));
@@ -285,6 +287,7 @@ ngx_http_mytest_handler(ngx_http_request_t *r)
         ngx_http_set_ctx(r, myctx, ngx_http_mytest_module);
     }
 
+    // <1> create upstream 
     if (ngx_http_upstream_create(r) != NGX_OK) {
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "ngx_http_upstream_create failed");
         return NGX_ERROR;
@@ -305,7 +308,7 @@ ngx_http_mytest_handler(ngx_http_request_t *r)
     }
 
     static struct sockaddr_in backendSockAddr;
-    struct hostent *pHost = gethostbyname((char*) "www.baidu.com");
+    struct hostent *pHost = gethostbyname((char*) "www.bing.com");
     if (pHost == NULL) {
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                 "gethostbyname fail. %s", strerror(errno));
