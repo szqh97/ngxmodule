@@ -1,5 +1,6 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
+#include <ngx_string.h>
 #include <ngx_config.h>
 
 typedef struct {
@@ -10,8 +11,52 @@ typedef struct {
     ngx_http_status_t status;
 } ngx_http_mytest_ctx_t;
 
-typedef struct 
-{} ngx_http_mytest_module;
+static char* ngx_conf_set_echo(ngx_conf_t* cf, ngx_command_t *cmd, void* conf);
+static void* ngx_http_mytest_create_loc_conf(ngx_conf_t *cf);
+static char* ngx_http_mytest_merge_loc_conf(ngx_conf_t *cf, void* parent, void* child);
+
+static ngx_command_t ngx_http_mytest_commands[] = {
+    {
+        ngx_string("mytest"),
+        NGX_HTTP_LOC_CONF | NGX_CONF_NOARGS,
+        ngx_conf_set_echo,
+        NGX_HTTP_LOC_CONF_OFFSET,
+        0, 
+        NULL
+    },
+    ngx_null_command
+};
+
+ngx_http_module_t ngx_http_mytest_module_ctx = {
+    NULL,       /* preconfiguration */
+    NULL,       /* postconfiguration */
+
+    NULL,       /* create main configuation */
+    NULL,       /* init main configuration */
+    
+    NULL,       /* create server configuation */
+    NULL,       /* merge server configuation */
+
+    ngx_http_mytest_create_loc_conf, /* create location configuration */
+    ngx_http_mytest_merge_loc_conf   /* merge location configuration */
+};
+
+ngx_module_t ngx_http_mytest_module = {
+    NGX_MODULE_V1,
+    &ngx_http_mytest_module_ctx, /* module context */
+    ngx_http_mytest_commands,   /* module directives */
+    NGX_HTTP_MODULE,            /* module type */
+    NULL,       /* init master */
+    NULL,       /* init module */
+    NULL,       /* init process */
+    NULL,       /* init thread */
+    NULL,       /* exit thread */
+    NULL,       /* exit process */
+    NULL,       /* exit master */
+    NGX_MODULE_V1_PADDING
+};
+
+
 
 static ngx_int_t mytest_upstream_process_header(ngx_http_request_t *r);
 static void* ngx_http_mytest_create_loc_conf(ngx_conf_t* cf)
@@ -42,6 +87,7 @@ static void* ngx_http_mytest_create_loc_conf(ngx_conf_t* cf)
 
 static char* ngx_http_mytest_merge_loc_conf(ngx_conf_t* cf, void* parent, void* child)
 {
+    /*
     ngx_http_mytest_conf_t* prev = (ngx_http_mytest_conf_t*) parent;
     ngx_http_mytest_conf_t* conf = (ngx_http_mytest_conf_t*) child;
     
@@ -50,9 +96,10 @@ static char* ngx_http_mytest_merge_loc_conf(ngx_conf_t* cf, void* parent, void* 
     hash.bucket_size = 1024;
     hash.name = "proxy_header_hash";
     if (ngx_http_upstream_hide_headers_hash(cf, &conf->upstream, &prev->upstream,
-                ngx_http_upstream_hide_headers_hash, &hash) != NGX_OK){
+                ngx_, &hash) != NGX_OK){
         return NGX_CONF_ERROR;
     }
+    */
 
     return NGX_CONF_OK;
 }
@@ -154,6 +201,140 @@ static ngx_int_t mytest_upstream_process_header(ngx_http_request_t *r)
             }
 
             h->value.data = h->key.data + h->key.len + 1;
+            h->lowcase_key = h->key.data + h->key.len + 1 + h->value.len + 1;
+
+            ngx_memcpy(h->key.data, r->header_name_start, h->key.len);
+            h->key.data[h->key.len] = '\0';
+            ngx_memcpy(h->value.data, r->header_start, h->value.len);
+            h->value.data[h->value.len] = '\0';
+
+            if (h->key.len == r->lowcase_index) {
+                ngx_memcpy(h->lowcase_key, r->lowcase_header, h->key.len);
+            } else {
+                ngx_strlow(h->lowcase_key, h->key.data, h->key.len);
+            }
+            
+            hh = ngx_hash_find(&umcf->headers_in_hash, h->hash, 
+                    h->lowcase_key, h->key.len);
+            if (hh && hh->handler(r, h, hh->offset) != NGX_OK) {
+                return NGX_ERROR;
+            }
+
+            continue;
+
+            }
+
+        if (rc == NGX_HTTP_PARSE_HEADER_DONE) {
+            if (r->upstream->headers_in.server == NULL) {
+                h = ngx_list_push(&r->upstream->headers_in.headers);
+                if (h == NULL) {
+                    return NGX_ERROR;
+                }
+                h->hash = ngx_hash(ngx_hash(ngx_hash(ngx_hash(
+                                ngx_hash('s', 'e'), 'r'), 'v'), 'e'), 'r');
+                ngx_str_set(&h->key, "Server");
+                ngx_str_null(&h->value);
+                h->lowcase_key = (u_char *) "server";
+            }
+
+            if (r->upstream->headers_in.date == NULL) {
+                h = ngx_list_push(&r->upstream->headers_in.headers);
+                if (h == NULL) {
+                    return NGX_ERROR;
+                }
+                if (r->upstream->headers_in.date == NULL) {
+                    h = ngx_list_push(&r->upstream->headers_in.headers);
+                    if (h == NULL) {
+                        return NGX_ERROR;
+                    }
+
+                    h->hash = ngx_hash(ngx_hash(ngx_hash('d', 'a'), 't'), 'e');
+                    ngx_str_set(&h->key, "Date");
+                    ngx_str_null(&h->value);
+                    h->lowcase_key = (u_char*) "Date";
+                }
+                return NGX_OK;
+
+            }
+
+            if (rc == NGX_AGAIN) {
+                return NGX_AGAIN;
+            }
+
+            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "upstream sent invalid header.");
+            return NGX_HTTP_UPSTREAM_INVALID_HEADER;
         }
     }
+}
+
+static void 
+mytest_upstream_finalize_request(ngx_http_request_t *r, ngx_int_t rc) {
+    ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, 
+            "mytest_upstream_finalize_request");
+}
+
+static ngx_int_t 
+ngx_http_mytest_handler(ngx_http_request_t *r)
+{
+    ngx_http_mytest_ctx_t *myctx = ngx_http_get_module_ctx(r, ngx_http_mytest_module);
+    if (myctx == NULL) {
+        myctx = ngx_palloc(r->pool, sizeof(ngx_http_mytest_ctx_t));
+        if (myctx == NULL) {
+            return NGX_ERROR;
+        }
+        ngx_http_set_ctx(r, myctx, ngx_http_mytest_module);
+    }
+
+    if (ngx_http_upstream_create(r) != NGX_OK) {
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "ngx_http_upstream_create failed");
+        return NGX_ERROR;
+    }
+
+    ngx_http_mytest_conf_t *mycf = (ngx_http_mytest_conf_t*) ngx_http_get_module_loc_conf(r, 
+            ngx_http_mytest_module);
+    ngx_http_upstream_t *u = r->upstream;
+    u->conf = &mycf->upstream;
+    u->buffering = mycf->upstream.buffering;
+
+    u->resolved = (ngx_http_upstream_resolved_t*) ngx_pcalloc(r->pool,
+            sizeof(ngx_http_upstream_resolved_t));
+    if (u->resolved == NULL) {
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                "ngx_pcalloc resolved error. %s", strerror(errno));
+        return NGX_ERROR;
+    }
+
+    static struct sockaddr_in backendSockAddr;
+    struct hostent *pHost = gethostbyname((char*) "www.baidu.com");
+    if (pHost == NULL) {
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                "gethostbyname fail. %s", strerror(errno));
+        return NGX_ERROR;
+    }
+
+    backendSockAddr.sin_family = AF_INET;
+    backendSockAddr.sin_port = htons((in_port_t)80);
+    char* pDmsIP = inet_ntoa(*(struct in_addr*) (pHost->h_addr_list[0]));
+    backendSockAddr.sin_addr.s_addr = inet_addr(pDmsIP);
+    //myctx->backendServer.data = (u_char*)pDmsIP;
+    //myctx->backendServer.len = strlen(pDmsIP);
+
+    u->resolved->sockaddr = (struct sockaddr*) &backendSockAddr;
+    u->resolved->socklen = sizeof(struct sockaddr_in);
+    u->resolved->naddrs = 1;
+
+    u->create_request = mytest_upstream_create_request;
+    u->process_header = mytest_process_status_line;
+    u->finalize_request  = mytest_upstream_finalize_request;
+
+    r->main->count++;
+    ngx_http_upstream_init(r);
+    return NGX_DONE;
+}
+static char* ngx_conf_set_echo(ngx_conf_t* cf, ngx_command_t* cmd, void* conf)
+{
+    ngx_http_core_loc_conf_t *clcf;
+    clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
+    clcf->handler = ngx_http_mytest_handler;
+    return NGX_CONF_OK;
 }
