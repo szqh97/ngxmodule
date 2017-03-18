@@ -78,3 +78,14 @@ static ngx_int_t mytest_subrequest_post_handler(ngx_http_request_t *r,
         return NGX_OK;
     }
 }
+
+static void mytest_post_handler(ngx_http_request_t *r)
+{
+    if (r->headers_out.status != NGX_HTTP_OK) {
+        ngx_http_finalize_request(r, r->headers_out.status);
+        return;
+    }
+
+    ngx_http_mytest_ctx_t* myctx = ngx_http_get_module_ctx(r, 
+            ngx_http_subrequest_mytest_module);
+}
