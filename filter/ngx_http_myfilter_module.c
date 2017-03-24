@@ -1,4 +1,5 @@
 #include <ngx_config.h>
+
 #include <ngx_core.h>
 #include <ngx_http.h>
 
@@ -11,6 +12,9 @@ typedef struct {
 } ngx_http_myfilter_ctx_t;
 
 
+static ngx_int_t ngx_http_myfilter_header_filter(ngx_http_request_t *r);
+static ngx_int_t ngx_http_myfilter_body_filter(ngx_http_request_t *r, ngx_chain_t *in);
+static ngx_str_t filter_prefix = ngx_string("[my filter prefix]");
 static void* ngx_http_myfilter_create_conf(ngx_conf_t *cf);
 static char* ngx_http_myfilter_merge_conf(ngx_conf_t *cf, void *parent, void *child);
 static ngx_int_t ngx_http_myfilter_init(ngx_conf_t *cf);
@@ -73,7 +77,7 @@ static char* ngx_http_myfilter_merge_conf(ngx_conf_t *cf, void *parent,
 {
     ngx_http_myfilter_conf_t *prev = (ngx_http_myfilter_conf_t *) parent;
     ngx_http_myfilter_conf_t *conf = (ngx_http_myfilter_conf_t *) child;
-    ngx_conf_merg_value(conf->enable, prev->enable, 0);
+    ngx_conf_merge_value(conf->enable, prev->enable, 0);
 
     return NGX_CONF_OK;
     
@@ -92,3 +96,65 @@ static ngx_int_t ngx_http_myfilter_init(ngx_conf_t *cf)
 
     return NGX_OK;
 }
+
+static ngx_int_t 
+ngx_http_myfilter_header_filter(ngx_http_request_t *r)
+{
+    ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "ngx_myfilter_header filter xxxxxxxxxxxxxx");
+    ngx_http_myfilter_ctx_t *ctx;
+    ngx_http_myfilter_conf_t *conf;
+
+    if (r->headers_out.status != NGX_HTTP_OK) {
+        return ngx_http_next_header_filter(r);
+    }
+
+    ctx = ngx_http_get_module_ctx(r, ngx_http_myfilter_module);
+    if (ctx) {
+        return ngx_http_next_header_filter(r);
+    }
+
+    conf = ngx_http_get_module_loc_conf(r, ngx_http_myfilter_module);
+    if (conf->enable == 0) {
+        return ngx_http_next_header_filter(r);
+    }
+
+    ctx = ngx_pcalloc(r->pool, sizeof(ngx_http_myfilter_ctx_t));
+    if (ctx == NULL) {
+        return NGX_ERROR;
+    }
+
+    ctx->add_prefix = 0;
+    ngx_http_set_ctx(r, ctx, ngx_http_myfilter_module);
+
+    if (r->headers_out.content_type.len >= sizeof("text/plain") - 1 &&
+            ngx_strncasecmp(r->headers_out.content_type.data, (u_char *) "text/plain", 
+                sizeof("text/plain") -1) == 0) {
+        ctx->add_prefix = 1;
+        if (r->headers_out.content_length_n > 0) {
+            r->headers_out.content_length_n += filter_prefix.len;
+        }
+    }
+    return ngx_http_next_header_filter(r);
+
+}
+
+static ngx_int_t
+ngx_http_myfilter_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
+{
+    ngx_http_myfilter_ctx_t *ctx;
+    ctx = ngx_http_get_module_ctx(r, ngx_http_myfilter_module);
+    if (ctx == NULL || ctx->add_prefix != 1) {
+        return ngx_http_next_body_filter(r, in);
+    }
+    ctx->add_prefix = 2;
+    ngx_buf_t *b = ngx_create_temp_buf(r->pool, filter_prefix.len);
+    b->start = b->pos = filter_prefix.data;
+    b->last = b->pos + filter_prefix.len;
+    ngx_chain_t *cl = ngx_alloc_chain_link(r->pool);
+    cl->buf = b;
+    cl->next = in;
+
+    return ngx_http_next_body_filter(r, cl);
+}
+
+
